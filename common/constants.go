@@ -6,13 +6,17 @@ import (
 	"time"
 )
 
+var ProxySecret = os.Getenv("PROXY_SECRET")
 var ProxySecrets = strings.Split(os.Getenv("PROXY_SECRET"), ",")
+var AllDialogRecordEnable = os.Getenv("ALL_DIALOG_RECORD_ENABLE")
 var RequestOutTime = os.Getenv("REQUEST_OUT_TIME")
 var StreamRequestOutTime = os.Getenv("STREAM_REQUEST_OUT_TIME")
+var SwaggerEnable = os.Getenv("SWAGGER_ENABLE")
+var OnlyOpenaiApi = os.Getenv("ONLY_OPENAI_API")
 
 var DebugEnabled = os.Getenv("DEBUG") == "true"
 
-var Version = "v4.0.6" // this hard coding will be replaced automatically when building, no need to manually change
+var Version = "v4.3.8" // this hard coding will be replaced automatically when building, no need to manually change
 
 const (
 	RequestIdKey = "X-Request-Id"
@@ -40,3 +44,9 @@ var (
 var RateLimitKeyExpirationDuration = 20 * time.Minute
 
 var RequestOutTimeDuration = 5 * time.Minute
+
+var CozeErrorMessages = []string{"You have exceeded the daily limit for sending messages to the bot. Please try again later.",
+	"Something wrong occurs, please retry. If the error persists, please contact the support team.",
+	"There are too many users now. Please try again a bit later."}
+
+var CozeDailyLimitErrorMessages = []string{"You have exceeded the daily limit for sending messages to the bot. Please try again later."}
