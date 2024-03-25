@@ -4,7 +4,6 @@ import (
 	"context"
 	"coze-discord-proxy/common"
 	"coze-discord-proxy/telegram"
-	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/gin-gonic/gin"
@@ -67,7 +66,7 @@ func CancelChannelDeleteTimer(channelId string) {
 			common.SysError(fmt.Sprintf("定时器无法停止或已触发，频道可能已被删除:%s", channelId))
 		}
 	} else {
-		common.SysError(fmt.Sprintf("频道无定时删除:%s", channelId))
+		//common.SysError(fmt.Sprintf("频道无定时删除:%s", channelId))
 	}
 }
 
@@ -111,25 +110,27 @@ type channelCreateResult struct {
 }
 
 func CreateChannelWithRetry(c *gin.Context, guildID, channelName string, channelType int) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
 
-	for i := 0; i < 3; i++ {
-		resultCh := make(chan channelCreateResult)
+	for attempt := 0; attempt < 3; attempt++ {
+		resultChan := make(chan channelCreateResult, 1)
 
 		go func() {
-			channelID, err := ChannelCreate(guildID, channelName, channelType)
-			resultCh <- channelCreateResult{ID: channelID, Err: err}
+			id, err := ChannelCreate(guildID, channelName, channelType)
+			resultChan <- channelCreateResult{
+				ID:  id,
+				Err: err,
+			}
 		}()
 
+		// 设置超时时间为10秒
 		select {
-		case result := <-resultCh:
+		case result := <-resultChan:
 			if result.Err != nil {
-				common.LogWarn(c, fmt.Sprintf("Failed to create channel, error: %v", result.Err))
-				continue
+				return "", result.Err
 			}
+			// 成功创建频道，返回结果
 			return result.ID, nil
-		case <-ctx.Done():
+		case <-time.After(60 * time.Second):
 			common.LogWarn(c, "Create channel timed out, retrying...")
 		}
 	}
@@ -139,5 +140,41 @@ func CreateChannelWithRetry(c *gin.Context, guildID, channelName string, channel
 			CreateChannelRiskChan <- "stop"
 		}()
 	}
-	return "", errors.New("failed to create channel after 3 attempts, please reset BOT_TOKEN")
+	// 所有尝试后仍失败，返回最后的错误
+	return "", fmt.Errorf("failed after 3 attempts due to timeout, please reset BOT_TOKEN")
+}
+
+func ChannelDelAllForCdp() error {
+	// 获取服务器内所有频道的信息
+	channels, err := Session.GuildChannels(GuildId)
+	if err != nil {
+		common.LogError(context.Background(), fmt.Sprintf("服务器Id查询频道失败 %s", err.Error()))
+		return err
+	}
+
+	// 遍历所有频道
+	for _, channel := range channels {
+
+		// 过滤掉配置中的频道id
+		for _, config := range BotConfigList {
+			if config.ChannelId == channel.ID {
+				continue
+			}
+		}
+
+		if ChannelId == channel.ID {
+			continue
+		}
+
+		// 检查频道名是否以"cdp-"开头
+		if strings.HasPrefix(channel.Name, "cdp-对话") {
+			// 删除该频道
+			_, err := Session.ChannelDelete(channel.ID)
+			if err != nil {
+				common.LogError(context.Background(), fmt.Sprintf("删除频道失败 %s", err.Error()))
+				return err
+			}
+		}
+	}
+	return nil
 }
